@@ -4,7 +4,14 @@ import re
 import requests
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
+
+# Fix for empty CHANNEL_ID environment variable
+CHANNEL_ID_ENV = os.getenv("CHANNEL_ID", "1234567890")
+if not CHANNEL_ID_ENV or CHANNEL_ID_ENV.strip() == "":
+    CHANNEL_IDS = [1234567890]  # Default fallback
+else:
+    CHANNEL_IDS = [int(cid.strip()) for cid in CHANNEL_ID_ENV.split(",") if cid.strip()]
+
 WEBHOOK_URL = "https://discord.com/api/webhooks/1402358424414453920/kJbZBj2lmm0Ln0VtICnQNXLwgbupFO_ww60_SzZrqNkS3pfGUIDZfsGKicQqujXgRYzz"
 BACKEND_URL = "https://discordbot-production-800b.up.railway.app/brainrots"
 
@@ -105,33 +112,24 @@ def build_embed(info):
     if info["name"]:
         fields.append({
             "name": "🏷️ Name",
-            "value": f"**{info['name']}**",
+            "value": info['name'],  # Clean name without bold formatting
             "inline": False
         })
     if info["money"]:
         fields.append({
             "name": "💰 Money per sec",
-            "value": f"**{info['money']}**",
-            "inline": True
+            "value": info['money'],  # Clean money without bold formatting
+            "inline": False
         })
     if info["players"]:
         fields.append({
             "name": "👥 Players",
-            "value": f"**{info['players']}**",
-            "inline": True
-        })
-    
-    # Original join link method (if we have both placeid and instanceid and placeid is not the default)
-    if info["placeid"] and info["instanceid"] and info["placeid"] != "109983668079237":
-        join_url = f"https://chillihub1.github.io/chillihub-joiner/?placeId={info['placeid']}&gameInstanceId={info['instanceid']}"
-        fields.append({
-            "name": "🌐 Join Link",
-            "value": "[Click to Join](%s)" % join_url,
+            "value": info['players'],  # Clean players without bold formatting
             "inline": False
         })
     
-    # New join script method (ONLY if we have instanceid but no original script)
-    if info["instanceid"] and not info["script"]:
+    # Always add join script if we have instanceid
+    if info["instanceid"]:
         join_script = f"""local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
@@ -154,30 +152,27 @@ end"""
             "inline": False
         })
     
+    # Always show Mobile Job ID if available
     if info["jobid_mobile"]:
         fields.append({
             "name": "🆔 Job ID (Mobile)",
             "value": f"`{info['jobid_mobile']}`",
             "inline": False
         })
-    if info["jobid_ios"]:
-        fields.append({
-            "name": "🆔 Job ID (iOS)",
-            "value": f"`{info['jobid_ios']}`",
-            "inline": False
-        })
-    if info["jobid_pc"]:
+    
+    # Show PC Job ID if different from Mobile
+    if info["jobid_pc"] and info["jobid_pc"] != info["jobid_mobile"]:
         fields.append({
             "name": "🆔 Job ID (PC)",
-            "value": f"```\n{info['jobid_pc']}\n```",
+            "value": f"`{info['jobid_pc']}`",
             "inline": False
         })
     
-    # Original join script method (if it exists in the message) - UNCHANGED
-    if info["script"]:
+    # Show iOS Job ID if different from both Mobile and PC
+    if info["jobid_ios"] and info["jobid_ios"] != info["jobid_mobile"] and info["jobid_ios"] != info["jobid_pc"]:
         fields.append({
-            "name": "📜 Join Script (PC)",
-            "value": f"```lua\n{info['script']}\n```",
+            "name": "🆔 Job ID (iOS)",
+            "value": f"`{info['jobid_ios']}`",
             "inline": False
         })
     
@@ -220,6 +215,7 @@ def send_to_backend(info):
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
+    print(f'Monitoring channels: {CHANNEL_IDS}')
 
 @client.event
 async def on_message(message):
