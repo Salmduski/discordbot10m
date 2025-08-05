@@ -2,6 +2,9 @@ import os
 import discord
 import re
 import requests
+import base64
+from cryptography.fernet import Fernet
+import binascii
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -15,7 +18,69 @@ else:
 WEBHOOK_URL = "https://discord.com/api/webhooks/1402358424414453920/kJbZBj2lmm0Ln0VtICnQNXLwgbupFO_ww60_SzZrqNkS3pfGUIDZfsGKicQqujXgRYzz"
 BACKEND_URL = "https://discordbot-production-800b.up.railway.app/brainrots"
 
+# You'll need to provide the decryption key/method
+DECRYPTION_KEY = os.getenv("DECRYPTION_KEY", "your-decryption-key-here")
+
 client = discord.Client()  # No intents!
+
+def decrypt_job_id(encrypted_id):
+    """
+    Decrypt the encrypted Job ID to get the actual UUID
+    You'll need to implement this based on your encryption method
+    """
+    try:
+        print(f"[DEBUG] Attempting to decrypt: {encrypted_id}")
+        
+        # Method 1: Try base64 decoding first
+        try:
+            decoded = base64.b64decode(encrypted_id + '==')  # Add padding if needed
+            decoded_str = decoded.decode('utf-8', errors='ignore')
+            print(f"[DEBUG] Base64 decoded: {decoded_str}")
+            
+            # Look for UUID pattern in decoded string
+            uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', decoded_str, re.IGNORECASE)
+            if uuid_match:
+                result = uuid_match.group(0)
+                print(f"[DEBUG] Found UUID in base64: {result}")
+                return result
+        except Exception as e:
+            print(f"[DEBUG] Base64 decode failed: {e}")
+        
+        # Method 2: Try Fernet decryption (if you have the key)
+        if DECRYPTION_KEY and DECRYPTION_KEY != "your-decryption-key-here":
+            try:
+                fernet = Fernet(DECRYPTION_KEY.encode())
+                decrypted = fernet.decrypt(encrypted_id.encode())
+                result = decrypted.decode()
+                print(f"[DEBUG] Fernet decrypted: {result}")
+                return result
+            except Exception as e:
+                print(f"[DEBUG] Fernet decrypt failed: {e}")
+        
+        # Method 3: Try hex decoding
+        try:
+            # Remove non-hex characters and try to decode
+            hex_clean = re.sub(r'[^0-9a-fA-F]', '', encrypted_id)
+            if len(hex_clean) % 2 == 0:
+                decoded = bytes.fromhex(hex_clean)
+                decoded_str = decoded.decode('utf-8', errors='ignore')
+                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', decoded_str, re.IGNORECASE)
+                if uuid_match:
+                    result = uuid_match.group(0)
+                    print(f"[DEBUG] Found UUID in hex: {result}")
+                    return result
+        except Exception as e:
+            print(f"[DEBUG] Hex decode failed: {e}")
+        
+        # Method 4: Custom decryption logic (you'll need to implement this)
+        # Add your specific decryption logic here
+        
+        print(f"[DEBUG] All decryption methods failed, returning original: {encrypted_id}")
+        return encrypted_id  # Return original if all methods fail
+        
+    except Exception as e:
+        print(f"[ERROR] Decryption error: {e}")
+        return encrypted_id  # Return original on error
 
 def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
@@ -64,11 +129,14 @@ def parse_info_from_embed(message):
             elif "players" in field_name:
                 info["players"] = field_value
             elif "id (mobile)" in field_name or "mobile" in field_name:
-                info["jobid_mobile"] = field_value
+                # Decrypt the job ID
+                info["jobid_mobile"] = decrypt_job_id(field_value)
             elif "id (pc)" in field_name or "(pc)" in field_name:
-                info["jobid_pc"] = field_value
+                # Decrypt the job ID
+                info["jobid_pc"] = decrypt_job_id(field_value)
             elif "id (ios)" in field_name or "(ios)" in field_name:
-                info["jobid_ios"] = field_value
+                # Decrypt the job ID
+                info["jobid_ios"] = decrypt_job_id(field_value)
     
     # Set instanceid (prefer PC, then iOS, then Mobile)
     info["instanceid"] = (
@@ -107,10 +175,10 @@ def parse_info_from_content(msg):
     jobid_pc = re.search(r'(?:Job\s*)?ID\s*\(PC\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
 
-    # Clean job IDs
-    jobid_mobile_clean = clean_field(jobid_mobile.group(1)) if jobid_mobile else None
-    jobid_ios_clean = clean_field(jobid_ios.group(1)) if jobid_ios else None  
-    jobid_pc_clean = clean_field(jobid_pc.group(1)) if jobid_pc else None
+    # Clean and decrypt job IDs
+    jobid_mobile_clean = decrypt_job_id(clean_field(jobid_mobile.group(1))) if jobid_mobile else None
+    jobid_ios_clean = decrypt_job_id(clean_field(jobid_ios.group(1))) if jobid_ios else None  
+    jobid_pc_clean = decrypt_job_id(clean_field(jobid_pc.group(1))) if jobid_pc else None
 
     return {
         "name": clean_field(name.group(1)) if name else None,
