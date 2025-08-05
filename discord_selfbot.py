@@ -30,14 +30,61 @@ def clean_field(text):
     # Remove extra whitespace
     return text.strip()
 
-def parse_info(msg):
-    print(f"[DEBUG] Full message content:\n{msg}\n" + "="*50)
+def parse_info_from_embed(message):
+    """Parse information from Discord embed fields"""
+    info = {
+        "name": None,
+        "money": None,
+        "players": None,
+        "jobid_mobile": None,
+        "jobid_pc": None,
+        "jobid_ios": None,
+        "instanceid": None,
+        "placeid": "109983668079237"
+    }
+    
+    print(f"[DEBUG] Processing message with {len(message.embeds)} embeds")
+    
+    for embed in message.embeds:
+        print(f"[DEBUG] Embed title: {embed.title}")
+        print(f"[DEBUG] Embed description: {embed.description}")
+        print(f"[DEBUG] Embed has {len(embed.fields)} fields")
+        
+        for field in embed.fields:
+            field_name = field.name.lower().strip()
+            field_value = clean_field(field.value)
+            
+            print(f"[DEBUG] Field: '{field.name}' = '{field.value}' (cleaned: '{field_value}')")
+            
+            # Match field names (case insensitive)
+            if "name" in field_name:
+                info["name"] = field_value
+            elif "money" in field_name or "per sec" in field_name:
+                info["money"] = field_value
+            elif "players" in field_name:
+                info["players"] = field_value
+            elif "id (mobile)" in field_name or "mobile" in field_name:
+                info["jobid_mobile"] = field_value
+            elif "id (pc)" in field_name or "(pc)" in field_name:
+                info["jobid_pc"] = field_value
+            elif "id (ios)" in field_name or "(ios)" in field_name:
+                info["jobid_ios"] = field_value
+    
+    # Set instanceid (prefer PC, then iOS, then Mobile)
+    info["instanceid"] = (
+        info["jobid_pc"] if info["jobid_pc"] else
+        info["jobid_ios"] if info["jobid_ios"] else
+        info["jobid_mobile"] if info["jobid_mobile"] else
+        None
+    )
+    
+    return info
+
+def parse_info_from_content(msg):
+    """Fallback: Parse information from message content (old method)"""
+    print(f"[DEBUG] Fallback parsing from content")
     
     # Try multiple formats:
-    # 1. Standard emoji format: 🏷️ Name
-    # 2. Text format: :settings: Name  
-    # 3. Custom emoji format: <:settings:1393687267662499962> Name
-    
     name = re.search(r'🏷️\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not name:
         name = re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
@@ -56,67 +103,29 @@ def parse_info(msg):
     if not players:
         players = re.search(r'<:member:\d+>\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
-    # Try both "Job ID" and "ID" formats with multiline - handle code blocks too
     jobid_mobile = re.search(r'(?:Job\s*)?ID\s*\(Mobile\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
-    jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     jobid_pc = re.search(r'(?:Job\s*)?ID\s*\(PC\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
-    
-    script = re.search(r'Join Script \(PC\)\s*\n(game:GetService\("TeleportService"\):TeleportToPlaceInstance\([^\n]+\))', msg, re.MULTILINE)
-    join_match = re.search(r'TeleportToPlaceInstance\((\d+),[ "\']*([A-Za-z0-9\-+/=]+)[ "\']*,', msg)
+    jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
 
-    print(f"[DEBUG] Raw regex matches:")
-    print(f"  Name: {name.group(1) if name else 'None'}")
-    print(f"  Money: {money.group(1) if money else 'None'}")
-    print(f"  Players: {players.group(1) if players else 'None'}")
-    print(f"  Mobile ID: {jobid_mobile.group(1) if jobid_mobile else 'None'}")
-    print(f"  PC ID: {jobid_pc.group(1) if jobid_pc else 'None'}")
-
-    # Clean the fields
-    name_clean = clean_field(name.group(1)) if name else None
-    money_clean = clean_field(money.group(1)) if money else None
-    players_str = clean_field(players.group(1)) if players else None
-    
-    print(f"[DEBUG] Cleaned fields:")
-    print(f"  Name: {name_clean}")
-    print(f"  Money: {money_clean}")
-    print(f"  Players: {players_str}")
-
-    current_players = None
-    max_players = None
-    if players_str:
-        m = re.match(r'(\d+)\s*/\s*(\d+)', players_str)
-        if m:
-            current_players = int(m.group(1))
-            max_players = int(m.group(2))
-
-    # Clean job IDs (remove code blocks and extra whitespace)
+    # Clean job IDs
     jobid_mobile_clean = clean_field(jobid_mobile.group(1)) if jobid_mobile else None
     jobid_ios_clean = clean_field(jobid_ios.group(1)) if jobid_ios else None  
     jobid_pc_clean = clean_field(jobid_pc.group(1)) if jobid_pc else None
 
-    # Try to get instanceid: prefer PC, fallback to iOS, then mobile
-    instanceid = (
-        jobid_pc_clean if jobid_pc_clean else
-        jobid_ios_clean if jobid_ios_clean else
-        jobid_mobile_clean if jobid_mobile_clean else
-        None
-    )
-
-    # Try to get placeid from the join script. If not found, use fixed placeid
-    placeid = join_match.group(1) if join_match else "109983668079237"
-
     return {
-        "name": name_clean,
-        "money": money_clean,
-        "players": players_str,
-        "current_players": current_players,
-        "max_players": max_players,
+        "name": clean_field(name.group(1)) if name else None,
+        "money": clean_field(money.group(1)) if money else None,
+        "players": clean_field(players.group(1)) if players else None,
         "jobid_mobile": jobid_mobile_clean,
         "jobid_ios": jobid_ios_clean,
         "jobid_pc": jobid_pc_clean,
-        "script": script.group(1).strip() if script else None,
-        "placeid": placeid,
-        "instanceid": instanceid
+        "instanceid": (
+            jobid_pc_clean if jobid_pc_clean else
+            jobid_ios_clean if jobid_ios_clean else
+            jobid_mobile_clean if jobid_mobile_clean else
+            None
+        ),
+        "placeid": "109983668079237"
     }
 
 def get_message_full_content(message):
@@ -249,8 +258,13 @@ async def on_message(message):
     if message.channel.id not in CHANNEL_IDS:
         return
 
-    full_content = get_message_full_content(message)
-    info = parse_info(full_content)
+    # Try parsing from embed fields first (new method)
+    if message.embeds:
+        info = parse_info_from_embed(message)
+    else:
+        # Fallback to content parsing (old method)
+        full_content = get_message_full_content(message)
+        info = parse_info_from_content(full_content)
     
     # Debug print to see what we're parsing
     print(f"Debug - Final parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
@@ -266,6 +280,7 @@ async def on_message(message):
         send_to_backend(info)
     else:
         try:
+            full_content = get_message_full_content(message)
             requests.post(WEBHOOK_URL, json={"content": full_content})
             print(f"⚠️ Sent plain text to webhook (missing fields)")
         except Exception as e:
