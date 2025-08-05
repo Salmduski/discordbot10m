@@ -3,8 +3,8 @@ import discord
 import re
 import requests
 import base64
-from cryptography.fernet import Fernet
-import binascii
+import json
+from urllib.parse import unquote
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -18,62 +18,144 @@ else:
 WEBHOOK_URL = "https://discord.com/api/webhooks/1402358424414453920/kJbZBj2lmm0Ln0VtICnQNXLwgbupFO_ww60_SzZrqNkS3pfGUIDZfsGKicQqujXgRYzz"
 BACKEND_URL = "https://discordbot-production-800b.up.railway.app/brainrots"
 
-# You'll need to provide the decryption key/method
-DECRYPTION_KEY = os.getenv("DECRYPTION_KEY", "your-decryption-key-here")
-
 client = discord.Client()  # No intents!
 
 def decrypt_job_id(encrypted_id):
     """
     Decrypt the encrypted Job ID to get the actual UUID
-    You'll need to implement this based on your encryption method
+    Uses only built-in Python libraries
     """
     try:
         print(f"[DEBUG] Attempting to decrypt: {encrypted_id}")
         
-        # Method 1: Try base64 decoding first
+        # Method 1: Try base64 decoding with proper padding
         try:
-            decoded = base64.b64decode(encrypted_id + '==')  # Add padding if needed
-            decoded_str = decoded.decode('utf-8', errors='ignore')
-            print(f"[DEBUG] Base64 decoded: {decoded_str}")
+            # Add padding if needed
+            missing_padding = len(encrypted_id) % 4
+            if missing_padding:
+                encrypted_id += '=' * (4 - missing_padding)
             
-            # Look for UUID pattern in decoded string
-            uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', decoded_str, re.IGNORECASE)
-            if uuid_match:
-                result = uuid_match.group(0)
-                print(f"[DEBUG] Found UUID in base64: {result}")
-                return result
+            decoded_bytes = base64.b64decode(encrypted_id)
+            print(f"[DEBUG] Base64 decoded bytes length: {len(decoded_bytes)}")
+            
+            # Try to decode as UTF-8 string
+            try:
+                decoded_str = decoded_bytes.decode('utf-8')
+                print(f"[DEBUG] Decoded string: {decoded_str}")
+                
+                # Look for UUID pattern in decoded string
+                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', decoded_str, re.IGNORECASE)
+                if uuid_match:
+                    result = uuid_match.group(0).lower()
+                    print(f"[DEBUG] Found UUID: {result}")
+                    return result
+                
+                # Try to parse as JSON (in case it's JSON encoded)
+                try:
+                    json_data = json.loads(decoded_str)
+                    if isinstance(json_data, dict):
+                        for key, value in json_data.items():
+                            if isinstance(value, str) and re.match(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', value, re.IGNORECASE):
+                                result = value.lower()
+                                print(f"[DEBUG] Found UUID in JSON: {result}")
+                                return result
+                except:
+                    pass
+                    
+            except UnicodeDecodeError:
+                print(f"[DEBUG] UTF-8 decode failed, trying hex interpretation")
+                
         except Exception as e:
             print(f"[DEBUG] Base64 decode failed: {e}")
         
-        # Method 2: Try Fernet decryption (if you have the key)
-        if DECRYPTION_KEY and DECRYPTION_KEY != "your-decryption-key-here":
-            try:
-                fernet = Fernet(DECRYPTION_KEY.encode())
-                decrypted = fernet.decrypt(encrypted_id.encode())
-                result = decrypted.decode()
-                print(f"[DEBUG] Fernet decrypted: {result}")
-                return result
-            except Exception as e:
-                print(f"[DEBUG] Fernet decrypt failed: {e}")
-        
-        # Method 3: Try hex decoding
+        # Method 2: Try interpreting decoded bytes as hex-encoded UUID
         try:
-            # Remove non-hex characters and try to decode
-            hex_clean = re.sub(r'[^0-9a-fA-F]', '', encrypted_id)
-            if len(hex_clean) % 2 == 0:
-                decoded = bytes.fromhex(hex_clean)
-                decoded_str = decoded.decode('utf-8', errors='ignore')
-                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', decoded_str, re.IGNORECASE)
-                if uuid_match:
-                    result = uuid_match.group(0)
-                    print(f"[DEBUG] Found UUID in hex: {result}")
-                    return result
+            missing_padding = len(encrypted_id) % 4
+            if missing_padding:
+                encrypted_id += '=' * (4 - missing_padding)
+            
+            decoded_bytes = base64.b64decode(encrypted_id)
+            
+            # If we have 16 bytes, it might be a binary UUID
+            if len(decoded_bytes) == 16:
+                # Convert bytes to hex and format as UUID
+                hex_str = decoded_bytes.hex()
+                formatted_uuid = f"{hex_str[:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:32]}"
+                print(f"[DEBUG] Binary UUID converted: {formatted_uuid}")
+                return formatted_uuid.lower()
+            
+            # Try to find UUID pattern in hex representation
+            hex_str = decoded_bytes.hex()
+            print(f"[DEBUG] Hex representation: {hex_str}")
+            
+            # Look for UUID-like patterns in the hex
+            if len(hex_str) >= 32:
+                # Try different UUID formats from the hex data
+                for i in range(0, len(hex_str) - 31, 2):
+                    chunk = hex_str[i:i+32]
+                    if len(chunk) == 32:
+                        formatted = f"{chunk[:8]}-{chunk[8:12]}-{chunk[12:16]}-{chunk[16:20]}-{chunk[20:32]}"
+                        print(f"[DEBUG] Trying UUID format: {formatted}")
+                        return formatted.lower()
+                        
         except Exception as e:
-            print(f"[DEBUG] Hex decode failed: {e}")
+            print(f"[DEBUG] Binary UUID decode failed: {e}")
         
-        # Method 4: Custom decryption logic (you'll need to implement this)
-        # Add your specific decryption logic here
+        # Method 3: Try URL decoding first, then base64
+        try:
+            url_decoded = unquote(encrypted_id)
+            if url_decoded != encrypted_id:
+                print(f"[DEBUG] URL decoded: {url_decoded}")
+                return decrypt_job_id(url_decoded)  # Recursive call
+        except Exception as e:
+            print(f"[DEBUG] URL decode failed: {e}")
+        
+        # Method 4: Simple XOR decryption (common for basic encryption)
+        try:
+            missing_padding = len(encrypted_id) % 4
+            if missing_padding:
+                encrypted_id += '=' * (4 - missing_padding)
+            
+            decoded_bytes = base64.b64decode(encrypted_id)
+            
+            # Try different XOR keys
+            for xor_key in [0x42, 0x55, 0xAA, 0xFF, 0x00]:
+                try:
+                    xor_result = bytearray()
+                    for byte in decoded_bytes:
+                        xor_result.append(byte ^ xor_key)
+                    
+                    xor_str = xor_result.decode('utf-8', errors='ignore')
+                    uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', xor_str, re.IGNORECASE)
+                    if uuid_match:
+                        result = uuid_match.group(0).lower()
+                        print(f"[DEBUG] XOR decrypted UUID with key {hex(xor_key)}: {result}")
+                        return result
+                except:
+                    continue
+                    
+        except Exception as e:
+            print(f"[DEBUG] XOR decrypt failed: {e}")
+        
+        # Method 5: Caesar cipher shift (try different shifts)
+        try:
+            for shift in range(1, 26):
+                shifted = ""
+                for char in encrypted_id:
+                    if char.isalpha():
+                        ascii_offset = 65 if char.isupper() else 97
+                        shifted += chr((ord(char) - ascii_offset - shift) % 26 + ascii_offset)
+                    else:
+                        shifted += char
+                
+                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', shifted, re.IGNORECASE)
+                if uuid_match:
+                    result = uuid_match.group(0).lower()
+                    print(f"[DEBUG] Caesar decrypted UUID with shift {shift}: {result}")
+                    return result
+                    
+        except Exception as e:
+            print(f"[DEBUG] Caesar decrypt failed: {e}")
         
         print(f"[DEBUG] All decryption methods failed, returning original: {encrypted_id}")
         return encrypted_id  # Return original if all methods fail
