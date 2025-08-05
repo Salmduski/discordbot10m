@@ -29,34 +29,35 @@ def clean_field(text):
     return text.strip()
 
 def parse_info(msg):
-    # Try emoji format first, then text format with proper multiline handling
-    name = re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
+    print(f"[DEBUG] Full message content:\n{msg}\n" + "="*50)
+    
+    # Try emoji format first, then text format with more flexible patterns
+    name = re.search(r'🏷️\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not name:
-        name = re.search(r':settings: Name\s*\n([^\n]+)', msg, re.MULTILINE)
+        name = re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
-    money = re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
+    money = re.search(r'💰\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not money:
-        money = re.search(r':media: Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
+        money = re.search(r':media:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
-    players = re.search(r'👥 Players\s*\n([^\n]+)', msg, re.MULTILINE)
+    players = re.search(r'👥\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not players:
-        players = re.search(r':member: Players\s*\n([^\n]+)', msg, re.MULTILINE)
+        players = re.search(r':member:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
-    # Try both "Job ID" and "ID" formats with multiline
-    jobid_mobile = re.search(r'Job ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_mobile:
-        jobid_mobile = re.search(r'ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    
-    jobid_ios = re.search(r'Job ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_ios:
-        jobid_ios = re.search(r'ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    
-    jobid_pc = re.search(r'Job ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_pc:
-        jobid_pc = re.search(r'ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
+    # Try both "Job ID" and "ID" formats with multiline - more flexible patterns
+    jobid_mobile = re.search(r'(?:Job\s*)?ID\s*\(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
+    jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
+    jobid_pc = re.search(r'(?:Job\s*)?ID\s*\(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
     
     script = re.search(r'Join Script \(PC\)\s*\n(game:GetService\("TeleportService"\):TeleportToPlaceInstance\([^\n]+\))', msg, re.MULTILINE)
     join_match = re.search(r'TeleportToPlaceInstance\((\d+),[ "\']*([A-Za-z0-9\-+/=]+)[ "\']*,', msg)
+
+    print(f"[DEBUG] Regex matches:")
+    print(f"  Name: {name.group(1) if name else 'None'}")
+    print(f"  Money: {money.group(1) if money else 'None'}")
+    print(f"  Players: {players.group(1) if players else 'None'}")
+    print(f"  Mobile ID: {jobid_mobile.group(1) if jobid_mobile else 'None'}")
+    print(f"  PC ID: {jobid_pc.group(1) if jobid_pc else 'None'}")
 
     players_str = clean_field(players.group(1)) if players else None
     current_players = None
@@ -112,19 +113,19 @@ def build_embed(info):
     if info["name"]:
         fields.append({
             "name": "🏷️ Name",
-            "value": info['name'],  # Clean name without bold formatting
+            "value": info['name'],
             "inline": False
         })
     if info["money"]:
         fields.append({
             "name": "💰 Money per sec",
-            "value": info['money'],  # Clean money without bold formatting
+            "value": info['money'],
             "inline": False
         })
     if info["players"]:
         fields.append({
             "name": "👥 Players",
-            "value": info['players'],  # Clean players without bold formatting
+            "value": info['players'],
             "inline": False
         })
     
@@ -193,12 +194,12 @@ def send_to_backend(info):
         return
 
     payload = {
-        "name": info["name"],  # Already cleaned by clean_field()
+        "name": info["name"],
         "serverId": str(info["placeid"]),
         "jobId": str(info["instanceid"]) if info["instanceid"] else "",
         "instanceId": str(info["instanceid"]) if info["instanceid"] else "",
-        "players": info["players"],  # Already cleaned by clean_field()
-        "moneyPerSec": info["money"]  # Already cleaned by clean_field()
+        "players": info["players"],
+        "moneyPerSec": info["money"]
     }
     
     try:
