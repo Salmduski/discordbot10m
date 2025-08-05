@@ -21,6 +21,8 @@ def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
     if not text:
         return text
+    # Remove ``` code block formatting
+    text = re.sub(r'```([^`]+)```', r'\1', text)
     # Remove ** bold formatting
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     # Remove * italic formatting  
@@ -31,35 +33,54 @@ def clean_field(text):
 def parse_info(msg):
     print(f"[DEBUG] Full message content:\n{msg}\n" + "="*50)
     
-    # Try emoji format first, then text format with more flexible patterns
+    # Try multiple formats:
+    # 1. Standard emoji format: 🏷️ Name
+    # 2. Text format: :settings: Name  
+    # 3. Custom emoji format: <:settings:1393687267662499962> Name
+    
     name = re.search(r'🏷️\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not name:
         name = re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
+    if not name:
+        name = re.search(r'<:settings:\d+>\s*Name\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
     money = re.search(r'💰\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not money:
         money = re.search(r':media:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
+    if not money:
+        money = re.search(r'<:media:\d+>\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
     players = re.search(r'👥\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     if not players:
         players = re.search(r':member:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
+    if not players:
+        players = re.search(r'<:member:\d+>\s*Players\s*\n([^\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
-    # Try both "Job ID" and "ID" formats with multiline - more flexible patterns
-    jobid_mobile = re.search(r'(?:Job\s*)?ID\s*\(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
-    jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
-    jobid_pc = re.search(r'(?:Job\s*)?ID\s*\(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE | re.IGNORECASE)
+    # Try both "Job ID" and "ID" formats with multiline - handle code blocks too
+    jobid_mobile = re.search(r'(?:Job\s*)?ID\s*\(Mobile\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
+    jobid_ios = re.search(r'(?:Job\s*)?ID\s*\(iOS\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
+    jobid_pc = re.search(r'(?:Job\s*)?ID\s*\(PC\)\s*\n([A-Za-z0-9\-+/=`\n]+)', msg, re.MULTILINE | re.IGNORECASE)
     
     script = re.search(r'Join Script \(PC\)\s*\n(game:GetService\("TeleportService"\):TeleportToPlaceInstance\([^\n]+\))', msg, re.MULTILINE)
     join_match = re.search(r'TeleportToPlaceInstance\((\d+),[ "\']*([A-Za-z0-9\-+/=]+)[ "\']*,', msg)
 
-    print(f"[DEBUG] Regex matches:")
+    print(f"[DEBUG] Raw regex matches:")
     print(f"  Name: {name.group(1) if name else 'None'}")
     print(f"  Money: {money.group(1) if money else 'None'}")
     print(f"  Players: {players.group(1) if players else 'None'}")
     print(f"  Mobile ID: {jobid_mobile.group(1) if jobid_mobile else 'None'}")
     print(f"  PC ID: {jobid_pc.group(1) if jobid_pc else 'None'}")
 
+    # Clean the fields
+    name_clean = clean_field(name.group(1)) if name else None
+    money_clean = clean_field(money.group(1)) if money else None
     players_str = clean_field(players.group(1)) if players else None
+    
+    print(f"[DEBUG] Cleaned fields:")
+    print(f"  Name: {name_clean}")
+    print(f"  Money: {money_clean}")
+    print(f"  Players: {players_str}")
+
     current_players = None
     max_players = None
     if players_str:
@@ -68,11 +89,16 @@ def parse_info(msg):
             current_players = int(m.group(1))
             max_players = int(m.group(2))
 
+    # Clean job IDs (remove code blocks and extra whitespace)
+    jobid_mobile_clean = clean_field(jobid_mobile.group(1)) if jobid_mobile else None
+    jobid_ios_clean = clean_field(jobid_ios.group(1)) if jobid_ios else None  
+    jobid_pc_clean = clean_field(jobid_pc.group(1)) if jobid_pc else None
+
     # Try to get instanceid: prefer PC, fallback to iOS, then mobile
     instanceid = (
-        jobid_pc.group(1).strip() if jobid_pc else
-        jobid_ios.group(1).strip() if jobid_ios else
-        jobid_mobile.group(1).strip() if jobid_mobile else
+        jobid_pc_clean if jobid_pc_clean else
+        jobid_ios_clean if jobid_ios_clean else
+        jobid_mobile_clean if jobid_mobile_clean else
         None
     )
 
@@ -80,14 +106,14 @@ def parse_info(msg):
     placeid = join_match.group(1) if join_match else "109983668079237"
 
     return {
-        "name": clean_field(name.group(1)) if name else None,
-        "money": clean_field(money.group(1)) if money else None,
+        "name": name_clean,
+        "money": money_clean,
         "players": players_str,
         "current_players": current_players,
         "max_players": max_players,
-        "jobid_mobile": jobid_mobile.group(1).strip() if jobid_mobile else None,
-        "jobid_ios": jobid_ios.group(1).strip() if jobid_ios else None,
-        "jobid_pc": jobid_pc.group(1).strip() if jobid_pc else None,
+        "jobid_mobile": jobid_mobile_clean,
+        "jobid_ios": jobid_ios_clean,
+        "jobid_pc": jobid_pc_clean,
         "script": script.group(1).strip() if script else None,
         "placeid": placeid,
         "instanceid": instanceid
@@ -227,7 +253,7 @@ async def on_message(message):
     info = parse_info(full_content)
     
     # Debug print to see what we're parsing
-    print(f"Debug - Parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
+    print(f"Debug - Final parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
     
     # Always send to Discord embed if name, money, players are there
     if info["name"] and info["money"] and info["players"]:
