@@ -17,7 +17,6 @@ else:
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1402358424414453920/kJbZBj2lmm0Ln0VtICnQNXLwgbupFO_ww60_SzZrqNkS3pfGUIDZfsGKicQqujXgRYzz"
 BACKEND_URL = "https://discordbot-production-800b.up.railway.app/brainrots"
-RIPPER_BACKEND_URL = "https://chatboxs-production.up.railway.app"  # NEW LINE
 
 client = discord.Client()  # No intents!
 
@@ -419,15 +418,6 @@ async def on_message(message):
     
     # Debug print to see what we're parsing
     print(f"Debug - Final parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
-    
-    # NEW BLOCK START
-    if info.get("instanceid"):
-        try:
-            requests.post(f"{RIPPER_BACKEND_URL}/job", json={"jobId": info["instanceid"]}, timeout=5)
-            print(f"✅ Submitted job to ripper: {info['instanceid'][:20]}...")
-        except Exception as e:
-            print(f"❌ Ripper submit failed: {e}")
-    # NEW BLOCK END
     
     # Always send to Discord embed if name, money, players are there
     if info["name"] and info["money"] and info["players"]:
