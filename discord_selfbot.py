@@ -7,9 +7,8 @@ TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
 RIPPER_BACKEND_URL = "https://chatboxs-production.up.railway.app"
 
-intents = discord.Intents.default()
-intents.message_content = True
-client = discord.Client(intents=intents)
+# Old discord.py version - no intents needed
+client = discord.Client()
 
 def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
@@ -99,7 +98,6 @@ async def on_message(message):
     # ONLY send to ripper backend /job endpoint if we have an instanceid
     if info.get("instanceid"):
         try:
-            # Fixed: Send to /job endpoint specifically
             requests.post(f"{RIPPER_BACKEND_URL}/job", json={"jobId": info["instanceid"]}, timeout=5)
             print(f"✅ Submitted job to ripper /job endpoint: {info['instanceid'][:20]}...")
         except Exception as e:
