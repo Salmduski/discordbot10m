@@ -5,7 +5,7 @@ import requests
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
-RIPPER_BACKEND_URL = "https://chatboxs-production.up.railway.app"
+RIPPER_BACKEND_URL = os.getenv("RIPPER_BACKEND_URL")
 
 # Old discord.py version - no intents needed
 client = discord.Client()
@@ -82,7 +82,10 @@ def get_message_full_content(message):
 async def on_ready():
     print(f'Logged in as {client.user}')
     print(f'Monitoring channels: {CHANNEL_IDS}')
-    print(f'Ripper backend: {RIPPER_BACKEND_URL}')
+    if RIPPER_BACKEND_URL:
+        print(f'Ripper backend configured')
+    else:
+        print('⚠️ RIPPER_BACKEND_URL not set - backend requests will be skipped')
 
 @client.event
 async def on_message(message):
@@ -95,12 +98,14 @@ async def on_message(message):
     # Debug print to see what we're parsing
     print(f"Debug - Parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
     
-    # ONLY send to ripper backend /job endpoint if we have an instanceid
-    if info.get("instanceid"):
+    # ONLY send to ripper backend /job endpoint if we have an instanceid AND backend URL is configured
+    if info.get("instanceid") and RIPPER_BACKEND_URL:
         try:
             requests.post(f"{RIPPER_BACKEND_URL}/job", json={"jobId": info["instanceid"]}, timeout=5)
             print(f"✅ Submitted job to ripper /job endpoint: {info['instanceid'][:20]}...")
         except Exception as e:
             print(f"❌ Ripper /job submit failed: {e}")
+    elif info.get("instanceid") and not RIPPER_BACKEND_URL:
+        print("⚠️ Instance ID found but RIPPER_BACKEND_URL not configured")
 
 client.run(TOKEN)
