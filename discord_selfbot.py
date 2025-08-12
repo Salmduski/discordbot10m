@@ -5,8 +5,7 @@ import requests
 import threading
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-# Support multiple channel IDs separated by commas
-CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",") if cid.strip()]
+CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
 # Support multiple webhook URLs separated by commas
 WEBHOOK_URLS = [url.strip() for url in os.getenv("WEBHOOK_URLS", "").split(",") if url.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL")
