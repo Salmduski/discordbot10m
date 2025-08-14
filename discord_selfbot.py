@@ -9,7 +9,13 @@ CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890")
 WEBHOOK_URLS = [url.strip() for url in os.getenv("WEBHOOK_URLS", "").split(",") if url.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL")
 
-client = discord.Client()  # No intents!
+# Enable all necessary intents for full message and embed access
+intents = discord.Intents.default()
+intents.message_content = True
+intents.guilds = True
+intents.members = True
+
+client = discord.Client(intents=intents)
 
 def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
@@ -22,34 +28,54 @@ def clean_field(text):
 def get_message_full_content(message):
     parts = []
     embed_fields = {}
+    # Get everything from the message content
     if message.content and message.content.strip():
         parts.append(message.content)
+    # Get everything from embeds
     for embed in message.embeds:
         if embed.title:
             parts.append(embed.title)
         if embed.description:
             parts.append(embed.description)
+        # Extract all fields (case-insensitive mapping)
         for field in getattr(embed, "fields", []):
-            embed_fields[field.name.strip().lower()] = field.value.strip()
+            key = field.name.strip().replace(":", "").replace("(", "").replace(")", "").replace("/", "").replace(" ", "").lower()
+            embed_fields[key] = field.value.strip()
             parts.append(f"{field.name}\n{field.value}")
     for att in message.attachments:
         parts.append(att.url)
     return "\n".join(parts) if parts else "(no content)", embed_fields
 
 def parse_info(msg, embed_fields=None):
-    # Try embed fields first (case-insensitive matching for flexibility)
-    def ef(key):
-        for k, v in embed_fields.items():
-            if k.replace(":", "").replace("(", "").replace(")", "").replace("/", "").replace(" ", "").lower() == key.lower():
-                return v
+    # Helper to find fields in any format
+    def ef(keys):
+        for key in keys:
+            k = key.lower()
+            for ek, ev in embed_fields.items():
+                if ek == k:
+                    return ev
         return None
 
-    name = ef("name") or ef("brainrotname")
-    money = ef("moneypersec") or ef("moneymoneypersec")
-    players = ef("players") or ef("playersplayers")
-    jobid_mobile = ef("idmobile") or ef("phoneidmobile")
-    jobid_pc = ef("idpc") or ef("scriptidpc")
-    script = ef("script") or ef("scriptscript")
+    embed_fields = embed_fields or {}
+    # Try embed fields first
+    name = ef([
+        "name", "brainrotname", "🏷️name"
+    ])
+    money = ef([
+        "moneypersec", "moneymoneypersec", "💰moneypersec"
+    ])
+    players = ef([
+        "players", "playersplayers", "👥players"
+    ])
+    jobid_mobile = ef([
+        "idmobile", "phoneidmobile"
+    ])
+    jobid_pc = ef([
+        "idpc", "scriptidpc"
+    ])
+    script = ef([
+        "script", "scriptscript"
+    ])
 
     # Fallback to regex if not found in embed
     if not name:
@@ -239,6 +265,8 @@ async def on_message(message):
         return
 
     full_content, embed_fields = get_message_full_content(message)
+    print("Raw message content:", full_content)
+    print("Embed fields:", embed_fields)
     info = parse_info(full_content, embed_fields)
 
     print(f"Debug - Parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
