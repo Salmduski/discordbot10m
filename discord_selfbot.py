@@ -6,7 +6,6 @@ import threading
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
-# Support multiple webhook URLs separated by commas
 WEBHOOK_URLS = [url.strip() for url in os.getenv("WEBHOOK_URLS", "").split(",") if url.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL")
 
@@ -16,90 +15,13 @@ def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
     if not text:
         return text
-    # Remove ** bold formatting
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    # Remove * italic formatting  
     text = re.sub(r'\*(.*?)\*', r'\1', text)
-    # Remove extra whitespace
     return text.strip()
-
-def parse_info(msg):
-    # Try new "brainrot" style first, then emoji, then text format
-    name = (
-        re.search(r':brainrot:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
-    )
-
-    money = (
-        re.search(r':money:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r':media:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
-    )
-
-    players = (
-        re.search(r':players:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r':member:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
-        re.search(r'👥 Players\s*\n([^\n]+)', msg, re.MULTILINE)
-    )
-
-    # Try both "Job ID" and "ID" formats with multiline (for mobile/iOS/PC)
-    jobid_mobile = (
-        re.search(r':phone:\s*ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
-        re.search(r'Job ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
-        re.search(r'ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    )
-
-    jobid_ios = (
-        re.search(r'Job ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
-        re.search(r'ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    )
-
-    jobid_pc = (
-        re.search(r':script:\s*ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
-        re.search(r'Job ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
-        re.search(r'ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    )
-
-    script = re.search(r'Join Script \(PC\)\s*\n(game:GetService\("TeleportService"\):TeleportToPlaceInstance\([^\n]+\))', msg, re.MULTILINE)
-    join_match = re.search(r'TeleportToPlaceInstance\((\d+),[ "\']*([A-Za-z0-9\-+/=]+)[ "\']*,', msg)
-
-    players_str = clean_field(players.group(1)) if players else None
-    current_players = None
-    max_players = None
-    if players_str:
-        m = re.match(r'(\d+)\s*/\s*(\d+)', players_str)
-        if m:
-            current_players = int(m.group(1))
-            max_players = int(m.group(2))
-
-    # Try to get instanceid: prefer PC, fallback to iOS, then mobile
-    instanceid = (
-        jobid_pc.group(1).strip() if jobid_pc else
-        jobid_ios.group(1).strip() if jobid_ios else
-        jobid_mobile.group(1).strip() if jobid_mobile else
-        None
-    )
-
-    # Try to get placeid from the join script. If not found, use fixed placeid
-    placeid = join_match.group(1) if join_match else "109983668079237"
-
-    return {
-        "name": clean_field(name.group(1)) if name else None,
-        "money": clean_field(money.group(1)) if money else None,
-        "players": players_str,
-        "current_players": current_players,
-        "max_players": max_players,
-        "jobid_mobile": jobid_mobile.group(1).strip() if jobid_mobile else None,
-        "jobid_ios": jobid_ios.group(1).strip() if jobid_ios else None,
-        "jobid_pc": jobid_pc.group(1).strip() if jobid_pc else None,
-        "script": script.group(1).strip() if script else None,
-        "placeid": placeid,
-        "instanceid": instanceid
-    }
 
 def get_message_full_content(message):
     parts = []
+    embed_fields = {}
     if message.content and message.content.strip():
         parts.append(message.content)
     for embed in message.embeds:
@@ -108,10 +30,82 @@ def get_message_full_content(message):
         if embed.description:
             parts.append(embed.description)
         for field in getattr(embed, "fields", []):
+            embed_fields[field.name.strip().lower()] = field.value.strip()
             parts.append(f"{field.name}\n{field.value}")
     for att in message.attachments:
         parts.append(att.url)
-    return "\n".join(parts) if parts else "(no content)"
+    return "\n".join(parts) if parts else "(no content)", embed_fields
+
+def parse_info(msg, embed_fields=None):
+    # Try embed fields first (case-insensitive matching for flexibility)
+    def ef(key):
+        for k, v in embed_fields.items():
+            if k.replace(":", "").replace("(", "").replace(")", "").replace("/", "").replace(" ", "").lower() == key.lower():
+                return v
+        return None
+
+    name = ef("name") or ef("brainrotname")
+    money = ef("moneypersec") or ef("moneymoneypersec")
+    players = ef("players") or ef("playersplayers")
+    jobid_mobile = ef("idmobile") or ef("phoneidmobile")
+    jobid_pc = ef("idpc") or ef("scriptidpc")
+    script = ef("script") or ef("scriptscript")
+
+    # Fallback to regex if not found in embed
+    if not name:
+        name = (
+            re.search(r':brainrot:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
+        )
+        name = name.group(1).strip() if name else None
+
+    if not money:
+        money = (
+            re.search(r':money:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r':media:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
+        )
+        money = money.group(1).strip() if money else None
+
+    if not players:
+        players = (
+            re.search(r':players:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r':member:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
+            re.search(r'👥 Players\s*\n([^\n]+)', msg, re.MULTILINE)
+        )
+        players = players.group(1).strip() if players else None
+
+    players_str = clean_field(players) if players else None
+    current_players = None
+    max_players = None
+    if players_str:
+        m = re.match(r'(\d+)\s*/\s*(\d+)', players_str)
+        if m:
+            current_players = int(m.group(1))
+            max_players = int(m.group(2))
+
+    instanceid = jobid_pc or jobid_mobile
+
+    placeid = "109983668079237"
+    if script:
+        m = re.search(r'TeleportToPlaceInstance\((\d+),["\']?([A-Za-z0-9\-]+)', script)
+        if m:
+            placeid = m.group(1)
+            instanceid = m.group(2)
+
+    return {
+        "name": clean_field(name) if name else None,
+        "money": clean_field(money) if money else None,
+        "players": players_str,
+        "current_players": current_players,
+        "max_players": max_players,
+        "jobid_mobile": jobid_mobile,
+        "jobid_pc": jobid_pc,
+        "script": script,
+        "placeid": placeid,
+        "instanceid": instanceid
+    }
 
 def build_embed(info):
     fields = []
@@ -133,8 +127,7 @@ def build_embed(info):
             "value": f"**{info['players']}**",
             "inline": True
         })
-    
-    # Original join link method (if we have both placeid and instanceid and placeid is not the default)
+
     if info["placeid"] and info["instanceid"] and info["placeid"] != "109983668079237":
         join_url = f"https://chillihub1.github.io/chillihub-joiner/?placeId={info['placeid']}&gameInstanceId={info['instanceid']}"
         fields.append({
@@ -142,8 +135,7 @@ def build_embed(info):
             "value": "[Click to Join](%s)" % join_url,
             "inline": False
         })
-    
-    # New join script method (ONLY if we have instanceid but no original script)
+
     if info["instanceid"] and not info["script"]:
         join_script = f"""local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
@@ -166,17 +158,11 @@ end"""
             "value": f"```lua\n{join_script}\n```",
             "inline": False
         })
-    
+
     if info["jobid_mobile"]:
         fields.append({
             "name": "🆔 Job ID (Mobile)",
             "value": f"`{info['jobid_mobile']}`",
-            "inline": False
-        })
-    if info["jobid_ios"]:
-        fields.append({
-            "name": "🆔 Job ID (iOS)",
-            "value": f"`{info['jobid_ios']}`",
             "inline": False
         })
     if info["jobid_pc"]:
@@ -185,15 +171,13 @@ end"""
             "value": f"```\n{info['jobid_pc']}\n```",
             "inline": False
         })
-    
-    # Original join script method (if it exists in the message) - UNCHANGED
     if info["script"]:
         fields.append({
             "name": "📜 Join Script (PC)",
             "value": f"```lua\n{info['script']}\n```",
             "inline": False
         })
-    
+
     embed = {
         "title": "Eps1lon Hub Notifier",
         "color": 0x5865F2,
@@ -202,7 +186,6 @@ end"""
     return {"embeds": [embed]}
 
 def send_to_webhooks(payload):
-    """Send payload to all configured webhooks"""
     def send_to_webhook(url, payload):
         try:
             response = requests.post(url, json=payload, timeout=10)
@@ -212,36 +195,28 @@ def send_to_webhooks(payload):
                 print(f"❌ Webhook error {response.status_code} for {url[:50]}...")
         except Exception as e:
             print(f"❌ Failed to send to webhook {url[:50]}...: {e}")
-    
-    # Send to all webhooks in parallel using threads
+
     threads = []
     for webhook_url in WEBHOOK_URLS:
         thread = threading.Thread(target=send_to_webhook, args=(webhook_url, payload))
         thread.start()
         threads.append(thread)
-    
-    # Wait for all requests to complete
     for thread in threads:
         thread.join()
 
 def send_to_backend(info):
-    """
-    Send info to backend - now sends clean data without markdown formatting
-    """
-    # Only require name now
     if not info["name"]:
         print("Skipping backend send - missing name")
         return
 
     payload = {
-        "name": info["name"],  # Already cleaned by clean_field()
+        "name": info["name"],
         "serverId": str(info["placeid"]),
         "jobId": str(info["instanceid"]) if info["instanceid"] else "",
         "instanceId": str(info["instanceid"]) if info["instanceid"] else "",
-        "players": info["players"],  # Already cleaned by clean_field()
-        "moneyPerSec": info["money"]  # Already cleaned by clean_field()
+        "players": info["players"],
+        "moneyPerSec": info["money"]
     }
-    
     try:
         response = requests.post(BACKEND_URL, json=payload, timeout=10)
         if response.status_code == 200:
@@ -263,13 +238,11 @@ async def on_message(message):
     if message.channel.id not in CHANNEL_IDS:
         return
 
-    full_content = get_message_full_content(message)
-    info = parse_info(full_content)
-    
-    # Debug print to see what we're parsing
+    full_content, embed_fields = get_message_full_content(message)
+    info = parse_info(full_content, embed_fields)
+
     print(f"Debug - Parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
-    
-    # Always send to Discord embed if name, money, players are there
+
     if info["name"] and info["money"] and info["players"]:
         embed_payload = build_embed(info)
         send_to_webhooks(embed_payload)
