@@ -9,13 +9,7 @@ CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890")
 WEBHOOK_URLS = [url.strip() for url in os.getenv("WEBHOOK_URLS", "").split(",") if url.strip()]
 BACKEND_URL = os.getenv("BACKEND_URL")
 
-# Enable all necessary intents for full message and embed access
-intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
-intents.members = True
-
-client = discord.Client(intents=intents)
+client = discord.Client()  # Selfbot, NO intents!
 
 def clean_field(text):
     """Remove markdown formatting and extra whitespace"""
@@ -28,26 +22,26 @@ def clean_field(text):
 def get_message_full_content(message):
     parts = []
     embed_fields = {}
-    # Get everything from the message content
+    # Message content
     if message.content and message.content.strip():
         parts.append(message.content)
-    # Get everything from embeds
-    for embed in message.embeds:
-        if embed.title:
+    # Embeds
+    for embed in getattr(message, "embeds", []):
+        if getattr(embed, "title", None):
             parts.append(embed.title)
-        if embed.description:
+        if getattr(embed, "description", None):
             parts.append(embed.description)
-        # Extract all fields (case-insensitive mapping)
         for field in getattr(embed, "fields", []):
             key = field.name.strip().replace(":", "").replace("(", "").replace(")", "").replace("/", "").replace(" ", "").lower()
             embed_fields[key] = field.value.strip()
             parts.append(f"{field.name}\n{field.value}")
-    for att in message.attachments:
+    # Attachments
+    for att in getattr(message, "attachments", []):
         parts.append(att.url)
     return "\n".join(parts) if parts else "(no content)", embed_fields
 
 def parse_info(msg, embed_fields=None):
-    # Helper to find fields in any format
+    embed_fields = embed_fields or {}
     def ef(keys):
         for key in keys:
             k = key.lower()
@@ -56,27 +50,13 @@ def parse_info(msg, embed_fields=None):
                     return ev
         return None
 
-    embed_fields = embed_fields or {}
     # Try embed fields first
-    name = ef([
-        "name", "brainrotname", "🏷️name"
-    ])
-    money = ef([
-        "moneypersec", "moneymoneypersec", "💰moneypersec"
-    ])
-    players = ef([
-        "players", "playersplayers", "👥players"
-    ])
-    jobid_mobile = ef([
-        "idmobile", "phoneidmobile"
-    ])
-    jobid_pc = ef([
-        "idpc", "scriptidpc"
-    ])
-    script = ef([
-        "script", "scriptscript"
-    ])
-
+    name = ef(["name", "brainrotname", "🏷️name"])
+    money = ef(["moneypersec", "moneymoneypersec", "💰moneypersec"])
+    players = ef(["players", "playersplayers", "👥players"])
+    jobid_mobile = ef(["idmobile", "phoneidmobile", "🆔idmobile"])
+    jobid_pc = ef(["idpc", "scriptidpc", "🆔idpc"])
+    script = ef(["script", "scriptscript"])
     # Fallback to regex if not found in embed
     if not name:
         name = (
@@ -85,7 +65,6 @@ def parse_info(msg, embed_fields=None):
             re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
         )
         name = name.group(1).strip() if name else None
-
     if not money:
         money = (
             re.search(r':money:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
@@ -93,7 +72,6 @@ def parse_info(msg, embed_fields=None):
             re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
         )
         money = money.group(1).strip() if money else None
-
     if not players:
         players = (
             re.search(r':players:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
@@ -112,8 +90,8 @@ def parse_info(msg, embed_fields=None):
             max_players = int(m.group(2))
 
     instanceid = jobid_pc or jobid_mobile
-
     placeid = "109983668079237"
+    # Try to extract from script field
     if script:
         m = re.search(r'TeleportToPlaceInstance\((\d+),["\']?([A-Za-z0-9\-]+)', script)
         if m:
@@ -153,7 +131,7 @@ def build_embed(info):
             "value": f"**{info['players']}**",
             "inline": True
         })
-
+    # Join link
     if info["placeid"] and info["instanceid"] and info["placeid"] != "109983668079237":
         join_url = f"https://chillihub1.github.io/chillihub-joiner/?placeId={info['placeid']}&gameInstanceId={info['instanceid']}"
         fields.append({
@@ -161,7 +139,7 @@ def build_embed(info):
             "value": "[Click to Join](%s)" % join_url,
             "inline": False
         })
-
+    # Join script (if we have instanceid but not original script)
     if info["instanceid"] and not info["script"]:
         join_script = f"""local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
@@ -184,7 +162,6 @@ end"""
             "value": f"```lua\n{join_script}\n```",
             "inline": False
         })
-
     if info["jobid_mobile"]:
         fields.append({
             "name": "🆔 Job ID (Mobile)",
@@ -203,7 +180,6 @@ end"""
             "value": f"```lua\n{info['script']}\n```",
             "inline": False
         })
-
     embed = {
         "title": "Eps1lon Hub Notifier",
         "color": 0x5865F2,
@@ -221,7 +197,6 @@ def send_to_webhooks(payload):
                 print(f"❌ Webhook error {response.status_code} for {url[:50]}...")
         except Exception as e:
             print(f"❌ Failed to send to webhook {url[:50]}...: {e}")
-
     threads = []
     for webhook_url in WEBHOOK_URLS:
         thread = threading.Thread(target=send_to_webhook, args=(webhook_url, payload))
@@ -234,7 +209,6 @@ def send_to_backend(info):
     if not info["name"]:
         print("Skipping backend send - missing name")
         return
-
     payload = {
         "name": info["name"],
         "serverId": str(info["placeid"]),
@@ -263,14 +237,11 @@ async def on_ready():
 async def on_message(message):
     if message.channel.id not in CHANNEL_IDS:
         return
-
     full_content, embed_fields = get_message_full_content(message)
     print("Raw message content:", full_content)
     print("Embed fields:", embed_fields)
     info = parse_info(full_content, embed_fields)
-
     print(f"Debug - Parsed info: name='{info['name']}', money='{info['money']}', players='{info['players']}', instanceid='{info['instanceid']}'")
-
     if info["name"] and info["money"] and info["players"]:
         embed_payload = build_embed(info)
         send_to_webhooks(embed_payload)
