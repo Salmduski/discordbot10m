@@ -24,32 +24,43 @@ def clean_field(text):
     return text.strip()
 
 def parse_info(msg):
-    # Try emoji format first, then text format with proper multiline handling
-    name = re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
-    if not name:
-        name = re.search(r':settings: Name\s*\n([^\n]+)', msg, re.MULTILINE)
-    
-    money = re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
-    if not money:
-        money = re.search(r':media: Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
-    
-    players = re.search(r'👥 Players\s*\n([^\n]+)', msg, re.MULTILINE)
-    if not players:
-        players = re.search(r':member: Players\s*\n([^\n]+)', msg, re.MULTILINE)
-    
-    # Try both "Job ID" and "ID" formats with multiline
-    jobid_mobile = re.search(r'Job ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_mobile:
-        jobid_mobile = re.search(r'ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    
-    jobid_ios = re.search(r'Job ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_ios:
-        jobid_ios = re.search(r'ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    
-    jobid_pc = re.search(r'Job ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    if not jobid_pc:
-        jobid_pc = re.search(r'ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
-    
+    # Try new "brainrot" style first, then emoji, then text format
+    name = (
+        re.search(r':brainrot:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r':settings:\s*Name\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r'🏷️ Name\s*\n([^\n]+)', msg, re.MULTILINE)
+    )
+
+    money = (
+        re.search(r':money:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r':media:\s*Money per sec\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r'💰 Money per sec\s*\n([^\n]+)', msg, re.MULTILINE)
+    )
+
+    players = (
+        re.search(r':players:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r':member:\s*Players\s*\n([^\n]+)', msg, re.MULTILINE) or
+        re.search(r'👥 Players\s*\n([^\n]+)', msg, re.MULTILINE)
+    )
+
+    # Try both "Job ID" and "ID" formats with multiline (for mobile/iOS/PC)
+    jobid_mobile = (
+        re.search(r':phone:\s*ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
+        re.search(r'Job ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
+        re.search(r'ID \(Mobile\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
+    )
+
+    jobid_ios = (
+        re.search(r'Job ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
+        re.search(r'ID \(iOS\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
+    )
+
+    jobid_pc = (
+        re.search(r':script:\s*ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
+        re.search(r'Job ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE) or
+        re.search(r'ID \(PC\)\s*\n([A-Za-z0-9\-+/=]+)', msg, re.MULTILINE)
+    )
+
     script = re.search(r'Join Script \(PC\)\s*\n(game:GetService\("TeleportService"\):TeleportToPlaceInstance\([^\n]+\))', msg, re.MULTILINE)
     join_match = re.search(r'TeleportToPlaceInstance\((\d+),[ "\']*([A-Za-z0-9\-+/=]+)[ "\']*,', msg)
 
