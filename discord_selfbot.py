@@ -3,6 +3,7 @@ import discord
 import re
 import requests
 import threading
+import json
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
@@ -63,7 +64,7 @@ def send_to_webhooks(payload):
         threading.Thread(target=send, args=(url, payload)).start()
 
 def send_to_backend(info):
-    # Your backend expects name, serverId, jobId, and moneyPerSec
+    # Your backend expects name, serverId, jobId, moneyPerSec, players
     server_id = "brainrot"
     if not info["name"] or not info["jobid"]:
         print("Skipping backend send - missing name or jobid")
@@ -72,7 +73,8 @@ def send_to_backend(info):
         "name": info["name"],
         "serverId": server_id,
         "jobId": info["jobid"],
-        "moneyPerSec": info.get("money", "unknown")
+        "moneyPerSec": info.get("money", "unknown"),
+        "players": info.get("players", "unknown")
     }
     try:
         r = requests.post(BACKEND_URL, json=payload, timeout=10)
@@ -83,6 +85,25 @@ def send_to_backend(info):
     except Exception as e:
         print(f"❌ Failed to send to backend: {e}")
 
+def send_servers_list_to_backend(servers):
+    # This will POST the full list to the backend in the same format
+    try:
+        for s in servers:
+            payload = {
+                "name": s.get("name"),
+                "serverId": s.get("serverId"),
+                "jobId": s.get("jobId"),
+                "moneyPerSec": s.get("moneyPerSec"),
+                "players": s.get("players")
+            }
+            r = requests.post(BACKEND_URL, json=payload, timeout=10)
+            if r.status_code == 200:
+                print(f"✅ Sent server to backend: {payload['name']}")
+            else:
+                print(f"❌ Backend error {r.status_code}: {r.text}")
+    except Exception as e:
+        print(f"❌ Failed to send servers list to backend: {e}")
+
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
@@ -92,6 +113,19 @@ async def on_ready():
 async def on_message(message):
     if message.channel.id not in CHANNEL_IDS:
         return
+
+    # Try to parse a servers list if present in the message content (JSON array)
+    try:
+        if message.content and message.content.strip().startswith("[") and message.content.strip().endswith("]"):
+            servers = json.loads(message.content)
+            if isinstance(servers, list) and all(isinstance(x, dict) for x in servers):
+                print(f"Detected servers list with {len(servers)} servers. Sending to backend.")
+                send_servers_list_to_backend(servers)
+                return
+    except Exception as e:
+        print(f"❌ Failed to parse servers list: {e}")
+
+    # Otherwise, parse as single embed
     info = parse_embed_fields(message)
     print("Parsed info:", info)
     if info and info["name"] and info["jobid"]:
