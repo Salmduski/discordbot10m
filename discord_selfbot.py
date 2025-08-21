@@ -63,7 +63,7 @@ def send_to_webhooks(payload):
         threading.Thread(target=send, args=(url, payload)).start()
 
 def send_to_backend(info):
-    # Your backend expects name, serverId, jobId. We'll use a constant serverId for these embed messages.
+    # Your backend expects name, serverId, jobId, and moneyPerSec
     server_id = "brainrot"
     if not info["name"] or not info["jobid"]:
         print("Skipping backend send - missing name or jobid")
@@ -71,7 +71,8 @@ def send_to_backend(info):
     payload = {
         "name": info["name"],
         "serverId": server_id,
-        "jobId": info["jobid"]
+        "jobId": info["jobid"],
+        "moneyPerSec": info.get("money", "unknown")
     }
     try:
         r = requests.post(BACKEND_URL, json=payload, timeout=10)
