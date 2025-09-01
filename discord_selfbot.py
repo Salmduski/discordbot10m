@@ -1,21 +1,23 @@
-import os
 import discord
 import re
 import requests
 import threading
 import json
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_IDS = [int(cid.strip()) for cid in os.getenv("CHANNEL_ID", "1234567890").split(",")]
-WEBHOOK_URLS = [url.strip() for url in os.getenv("WEBHOOK_URLS", "").split(",") if url.strip()]
-BACKEND_URL = os.getenv("BACKEND_URL")
+# --- CONFIGURATION (hardcoded for now) ---
+TOKEN = "MTQxMjE5MjM3ODM5OTQ5MDE0OA.G0bGaf.Vm1LEVQ_nHkkrcxzH7DsxO4jpIbUQM--v4zKuI"
+CHANNEL_IDS = [1412194628806906071]
+WEBHOOK_URLS = [
+    "https://discord.com/api/webhooks/1412194934143975534/gwT_N-8-zAmv_HERre0dkxXni3E_EtaZMkyjjHpYtn3s2TMgvNEguAlIm3zkiYY1Jlpw"
+]
+BACKEND_URL = "https://brainrotss.up.railway.app/brainrots"
 
 client = discord.Client()
 
+# --- HELPERS ---
 def clean_field(text):
     if not text:
         return text
-    # Remove bold, italic, and code formatting
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     text = re.sub(r'\*(.*?)\*', r'\1', text)
     text = re.sub(r'^`{3,}([^\n]*?)`{3,}$', r'\1', text, flags=re.DOTALL)
@@ -23,7 +25,6 @@ def clean_field(text):
     return text
 
 def parse_embed_fields(message):
-    # Only process the first embed (your format)
     if not message.embeds or not hasattr(message.embeds[0], 'fields'):
         return None
     embed = message.embeds[0]
@@ -64,7 +65,6 @@ def send_to_webhooks(payload):
         threading.Thread(target=send, args=(url, payload)).start()
 
 def send_to_backend(info):
-    # Your backend expects name, serverId, jobId, moneyPerSec, players
     server_id = "brainrot"
     if not info["name"] or not info["jobid"]:
         print("Skipping backend send - missing name or jobid")
@@ -86,7 +86,6 @@ def send_to_backend(info):
         print(f"❌ Failed to send to backend: {e}")
 
 def send_servers_list_to_backend(servers):
-    # This will POST the full list to the backend in the same format
     try:
         for s in servers:
             payload = {
@@ -104,17 +103,17 @@ def send_servers_list_to_backend(servers):
     except Exception as e:
         print(f"❌ Failed to send servers list to backend: {e}")
 
+# --- EVENTS ---
 @client.event
 async def on_ready():
-    print(f'Logged in as {client.user}')
-    print(f'Watching channels: {CHANNEL_IDS}')
+    print(f'✅ Logged in as {client.user}')
+    print(f'📡 Watching channels: {CHANNEL_IDS}')
 
 @client.event
 async def on_message(message):
     if message.channel.id not in CHANNEL_IDS:
         return
 
-    # Try to parse a servers list if present in the message content (JSON array)
     try:
         if message.content and message.content.strip().startswith("[") and message.content.strip().endswith("]"):
             servers = json.loads(message.content)
@@ -125,7 +124,6 @@ async def on_message(message):
     except Exception as e:
         print(f"❌ Failed to parse servers list: {e}")
 
-    # Otherwise, parse as single embed
     info = parse_embed_fields(message)
     print("Parsed info:", info)
     if info and info["name"] and info["jobid"]:
@@ -136,4 +134,5 @@ async def on_message(message):
     else:
         print("⚠️ Missing required fields. Skipping.")
 
+# --- START ---
 client.run(TOKEN)
